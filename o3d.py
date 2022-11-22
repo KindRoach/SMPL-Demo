@@ -25,14 +25,13 @@
 # ----------------------------------------------------------------------------
 
 import glob
-import numpy as np
-import open3d as o3d
-import open3d.visualization.gui as gui
-import open3d.visualization.rendering as rendering
 import os
 import platform
 import sys
 
+import open3d as o3d
+import open3d.visualization.gui as gui
+import open3d.visualization.rendering as rendering
 import smplx
 import torch
 
@@ -221,12 +220,17 @@ class AppWindow:
     ]
 
     def __init__(self, width, height):
+        # smpl
+        self.beta_edit = []
+        self.pose_edit = []
+        self.model = smplx.create("models")
+
+        # gui
         self.settings = Settings()
         resource_path = gui.Application.instance.resource_path
         self.settings.new_ibl_name = resource_path + "/" + AppWindow.DEFAULT_IBL
 
-        self.window = gui.Application.instance.create_window(
-            "Open3D", width, height)
+        self.window = gui.Application.instance.create_window("SMPL-Demo", width, height)
         w = self.window  # to make the code more concise
 
         # 3D widget
@@ -255,6 +259,7 @@ class AppWindow:
         self.init_view_ctrls(em, separation_height)
         self.init_advanced(em, separation_height)
         self.init_material_settings(em, separation_height)
+        self.init_smpl_parameter(em, separation_height)
         # ----
 
         # Normally our user interface can be children of all one layout (usually
@@ -269,10 +274,6 @@ class AppWindow:
         w.add_child(self._settings_panel)
         self.init_menu()
         self._apply_settings()
-
-        # smpl
-        self.beta = torch.zeros((1, 10), dtype=torch.float32)
-        self.model = smplx.create("models")
 
     def init_menu(self):
         # ---- Menu ----
@@ -476,6 +477,39 @@ class AppWindow:
         view_ctrls.add_child(self._profiles)
         self._settings_panel.add_fixed(separation_height)
         self._settings_panel.add_child(view_ctrls)
+
+    def init_smpl_parameter(self, em, separation_height):
+        smpl_parameter = gui.CollapsableVert("Smpl parameter", 0, gui.Margins(em, 0, 0, 0))
+        for i in range(10):
+            intedit = gui.NumberEdit(gui.NumberEdit.INT)
+            intedit.int_value = 0
+            intedit.set_on_value_changed(self.value_changed)
+            self.beta_edit.append(intedit)
+
+            h = gui.Horiz()
+            h.add_child(gui.Label(f"Beta {i}"))
+            h.add_child(intedit)
+
+            smpl_parameter.add_child(h)
+
+        for i in range(23):
+            h = gui.Horiz()
+            h.add_child(gui.Label(f"Pose {i}"))
+            pose_i = []
+            for i in range(3):
+                intedit = gui.NumberEdit(gui.NumberEdit.INT)
+                intedit.set_preferred_width(4 * em)
+                intedit.int_value = 0
+                intedit.set_on_value_changed(self.value_changed)
+                pose_i.append(intedit)
+                h.add_child(intedit)
+            self.pose_edit.append(pose_i)
+            smpl_parameter.add_child(h)
+
+        self._settings_panel.add_child(smpl_parameter)
+
+    def value_changed(self, new_value):
+        self.load_smpl()
 
     def _apply_settings(self):
         bg_color = [
@@ -688,7 +722,11 @@ class AppWindow:
         self._scene.scene.clear_geometry()
         try:
             with torch.no_grad():
-                output = self.model(betas=self.beta, return_verts=True)
+                beta = [int(x.int_value) for x in self.beta_edit]
+                beta = torch.tensor(beta, dtype=torch.float32).unsqueeze(0)
+                pose = [[x.int_value for x in pose] for pose in self.pose_edit]
+                pose = torch.tensor(pose, dtype=torch.float32).reshape(1, -1)
+                output = self.model(betas=beta, body_pose=pose, return_verts=True)
             vertices = output.vertices.detach().cpu().numpy().squeeze()
 
             mesh = o3d.geometry.TriangleMesh()

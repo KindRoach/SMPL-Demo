@@ -1,3 +1,6 @@
 pyqt6
 smplx
 open3d
+scipy
+chumpy
+
